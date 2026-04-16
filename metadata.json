@@ -1,0 +1,12 @@
+{
+  "name": "Meditrack-AI",
+  "description": "AI-Integrated Medical Management System for medical report analysis, patient records, and health inquiries.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "AI Medical Report Analysis",
+    "Smart Patient Records",
+    "AI Health Chatbot"
+  ]
+}
