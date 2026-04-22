@@ -62,7 +62,7 @@ src/
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/meditrack-ai.git
+   git clone https://github.com/Akashmunn16/meditrack-ai.git
    cd meditrack-ai
    ```
 
