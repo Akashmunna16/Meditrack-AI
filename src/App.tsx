@@ -5,31 +5,54 @@
 
 import { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut } from "firebase/auth";
+import { onAuthStateChanged, User, signOut } from "firebase/auth";
 import { auth } from "./firebase";
+import AuthService from "./services/AuthService";
 import Navbar from "./components/Navbar";
 import ReportAnalyzer from "./components/ReportAnalyzer";
 import PatientDashboard from "./components/PatientDashboard";
 import MedChat from "./components/MedChat";
 import ErrorBoundary from "./components/ErrorBoundary";
 import AlertSystem from "./components/AlertSystem";
-import { Activity, ShieldCheck, Heart, LogIn } from "lucide-react";
+import AuthErrorDisplay from "./components/AuthErrorDisplay";
+import { Activity, ShieldCheck, Heart, LogIn, Loader } from "lucide-react";
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [signingIn, setSigningIn] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const authService = AuthService.getInstance(auth);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
+      // Clear error when auth state changes
+      if (currentUser) {
+        setAuthError(null);
+      }
     });
     return () => unsubscribe();
   }, []);
 
-  const login = () => {
-    const provider = new GoogleAuthProvider();
-    signInWithPopup(auth, provider);
+  const login = async () => {
+    // Prevent multiple sign-in attempts
+    if (signingIn) return;
+
+    setSigningIn(true);
+    setAuthError(null);
+
+    try {
+      await authService.signInWithGoogle();
+      // Success - user state will be updated via onAuthStateChanged
+      setSigningIn(false);
+    } catch (error: any) {
+      setSigningIn(false);
+      // Set error message for display
+      const errorMessage = error?.message || "An unknown error occurred during sign-in";
+      setAuthError(errorMessage);
+    }
   };
 
   if (loading) {
@@ -42,7 +65,12 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen grid lg:grid-cols-2 bg-natural-bg font-sans">
+      <>
+        <AuthErrorDisplay 
+          error={authError} 
+          onDismiss={() => setAuthError(null)} 
+        />
+        <div className="min-h-screen grid lg:grid-cols-2 bg-natural-bg font-sans">
         <div className="hidden lg:flex flex-col justify-center p-24 bg-emerald-950 text-stone-50 transition-all">
           <div className="mb-8 flex items-center gap-2">
             <Heart className="text-emerald-400 size-10 fill-emerald-400" />
@@ -61,10 +89,20 @@ export default function App() {
             <p className="text-natural-muted">Access your healthcare dashboard through secure Google authentication.</p>
             <button
               onClick={login}
-              className="w-full flex items-center justify-center gap-3 py-4 px-6 bg-natural-text text-white rounded-xl hover:opacity-90 transition-all shadow-lg group font-sans"
+              disabled={signingIn}
+              className="w-full flex items-center justify-center gap-3 py-4 px-6 bg-natural-text text-white rounded-xl hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed transition-all shadow-lg group font-sans"
             >
-              <LogIn className="size-5 group-hover:translate-x-1 transition-transform" />
-              Sign in with Google
+              {signingIn ? (
+                <>
+                  <Loader className="size-5 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  <LogIn className="size-5 group-hover:translate-x-1 transition-transform" />
+                  Sign in with Google
+                </>
+              )}
             </button>
             <div className="flex items-center justify-center gap-2 text-xs text-natural-muted">
                <ShieldCheck className="size-4" />
@@ -73,6 +111,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      </>
     );
   }
 

@@ -101,10 +101,31 @@ export default function MedicationTracker({ patientId, user }: MedicationTracker
 
   const takeDose = async (medId: string, currentRemaining: number) => {
     if (currentRemaining <= 0) return;
+    
+    // Optimistic UI Update - update immediately
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    
+    setMedications(prev => prev.map(m => 
+      m.id === medId 
+        ? { 
+            ...m, 
+            remainingTablets: m.remainingTablets - 1, 
+            lastTaken: now 
+          } 
+        : m
+    ));
+    
+    // Update logs immediately
+    setLogs(prev => ({
+      ...prev,
+      [medId]: [
+        { id: 'temp-' + Date.now(), status: 'taken', date: dateStr },
+        ...(prev[medId] || [])
+      ]
+    }));
+
     try {
-      const now = new Date();
-      const dateStr = now.toISOString().split('T')[0];
-      
       await updateDoc(doc(db, "patients", patientId, "medications", medId), {
         remainingTablets: increment(-1),
         lastTaken: serverTimestamp()
@@ -116,6 +137,16 @@ export default function MedicationTracker({ patientId, user }: MedicationTracker
         timestamp: serverTimestamp()
       });
     } catch (err) {
+      // Rollback on failure
+      setMedications(prev => prev.map(m => 
+        m.id === medId 
+          ? { ...m, remainingTablets: currentRemaining, lastTaken: m.lastTaken } 
+          : m
+      ));
+      setLogs(prev => ({
+        ...prev,
+        [medId]: prev[medId]?.filter(l => !l.id.startsWith('temp-')) || []
+      }));
       handleFirestoreError(err, OperationType.UPDATE, "medications");
     }
   };

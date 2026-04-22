@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { User } from "firebase/auth";
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, orderBy } from "firebase/firestore";
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, orderBy, doc, deleteDoc, getDocs } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../firebase";
-import { Plus, Search, UserCircle, Calendar, ChevronRight, Activity, Database, Loader2 } from "lucide-react";
+import { Plus, Search, UserCircle, Calendar, ChevronRight, Activity, Loader2, Trash2 } from "lucide-react";
 import { cn, formatDate } from "../utils";
 import PatientDetails from "./PatientDetails";
 
@@ -26,6 +26,7 @@ export default function PatientDashboard({ user }: PatientDashboardProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [newPatient, setNewPatient] = useState({
     name: "",
@@ -35,11 +36,26 @@ export default function PatientDashboard({ user }: PatientDashboardProps) {
   });
 
   useEffect(() => {
+    // Show empty state immediately while loading
+    setIsLoading(true);
+    
     const q = query(
       collection(db, "patients"),
       where("uid", "==", user.uid),
       orderBy("createdAt", "desc")
     );
+
+    // Use get() first for immediate initial load before realtime subscription
+    getDocs(q).then(snapshot => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Patient[];
+      setPatients(data);
+      setIsLoading(false);
+    }).catch(() => {
+      setIsLoading(false);
+    });
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({
@@ -50,6 +66,7 @@ export default function PatientDashboard({ user }: PatientDashboardProps) {
       setIsLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, "patients");
+      setIsLoading(false);
     });
 
     return () => unsubscribe();
@@ -70,6 +87,29 @@ export default function PatientDashboard({ user }: PatientDashboardProps) {
       setShowAddForm(false);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, "patients");
+    }
+  };
+
+  const handleDeletePatient = async (patientId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (deletingId) return;
+    
+    if (!confirm(`Are you sure you want to permanently delete this patient record? This action cannot be undone.`)) {
+      return;
+    }
+
+    // Optimistic UI update - remove immediately
+    setPatients(prevPatients => prevPatients.filter(p => p.id !== patientId));
+    setDeletingId(patientId);
+    
+    try {
+      await deleteDoc(doc(db, "patients", patientId));
+    } catch (err) {
+      // Rollback on failure
+      setPatients(prev => [...prev, ...patients.filter(p => p.id === patientId)]);
+      handleFirestoreError(err, OperationType.DELETE, "patients");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -130,10 +170,18 @@ export default function PatientDashboard({ user }: PatientDashboardProps) {
                 <div className="size-14 bg-natural-sidebar rounded-2xl group-hover:bg-natural-accent/10 flex items-center justify-center transition-colors">
                   <UserCircle className="size-8 text-natural-muted group-hover:text-natural-accent transition-all" />
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                   <div className="text-[9px] font-bold uppercase tracking-[2px] text-natural-muted/60">Registry ID</div>
-                   <div className="text-sm font-mono font-bold text-natural-text opacity-40">#{patient.id.slice(-6).toUpperCase()}</div>
-                </div>
+                <button
+                  onClick={(e) => handleDeletePatient(patient.id, e)}
+                  disabled={deletingId === patient.id}
+                  className="p-2 rounded-xl hover:bg-red-50 text-natural-muted hover:text-red-500 transition-all disabled:opacity-50"
+                  title="Delete patient record"
+                >
+                  {deletingId === patient.id ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
+                </button>
               </div>
               
               <div className="space-y-2 mb-8 flex-1">
